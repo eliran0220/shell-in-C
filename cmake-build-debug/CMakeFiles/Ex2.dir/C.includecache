@@ -1,0 +1,24 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/eliran/CLionProjects/Ex2/main.c
+stdio.h
+-
+sys/types.h
+-
+unistd.h
+-
+wait.h
+-
+malloc.h
+-
+memory.h
+-
+stdlib.h
+-
+
