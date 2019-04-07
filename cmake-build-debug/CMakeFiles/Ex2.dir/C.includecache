@@ -9,16 +9,14 @@
 /home/eliran/CLionProjects/Ex2/main.c
 stdio.h
 -
-sys/types.h
+stdlib.h
 -
-unistd.h
+memory.h
 -
 wait.h
 -
 malloc.h
 -
-memory.h
--
-stdlib.h
+unistd.h
 -
 

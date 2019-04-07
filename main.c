@@ -1,24 +1,26 @@
 #include <stdio.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <memory.h>
 #include <wait.h>
 #include <malloc.h>
-#include <memory.h>
-#include <stdlib.h>
+#include <unistd.h>
+
 
 #define SIZE 512
 #define ZERO 0
-#define ERROR_EXCEVP "Error executing"
-#define ERROR_FORK "Error fork"
+#define FAILURE "Error in system call\n"
 #define EXIT "exit"
 #define JOBS "jobs"
+#define MAN "man"
+#define AMP "&"
+#define PROMPT "> "
 #define WRONG_ARG "~"
 #define PATH "HOME"
+#define CD "cd"
 #define EXIT_ZERO "0"
 #define EXIT_ONE "1"
 #define EXIT_TWO "2"
 #define EXIT_THREE "3"
-
 
 struct Jobs {
 
@@ -28,15 +30,36 @@ struct Jobs {
 
 };
 
+void freeCommand(char *command[SIZE]);
+
+/**
+ * Function name: prev
+ * The input: struct Jobs*
+ * The output: struct Jobs*
+ * The function operation: The function gets a pointer to the linked list
+ * Jobs and returns it's previous pointer.
+ */
+struct Jobs *prev(struct Jobs *Jobs, struct Jobs *dest);
+
+/**
+ * Function name: cdCommand
+ * The input: char**
+ * The output: void
+ * The function operation: The function gets the parameters above,
+ * and runs the cd operation.
+ */
+void cdCommand(char **command);
+
 /**
  * Function name: exitCommand
  * The input: char**, struct, char*
- * The output: the exit code
+ * The     printf("jobs : show jobs which run in the background\n");
+output: the exit code
  * The function operation: The function gets the parameters above,
  * frees the input given by the user, prints the pid , frees all the jobs
  * in the linked list and kills each process.
  */
-int exitCommand(char **command, struct Jobs *Jobs, char *toEmpty);
+int exitCommand(char **command, struct Jobs *Jobs);
 
 /**
  * Function name: run
@@ -87,7 +110,8 @@ int checkIsJob(char *array[SIZE]);
  * user, a pointer to the linked list Jobs, the index of the &, and the pid.
  * Inserts the command to the linked list.
  */
-void insertToJobs(char *job[SIZE], struct Jobs *head, int indexOfAmp, int pid);
+void insertToJobs(char *job[SIZE], struct Jobs *head, int indexOfAmp, int pid,
+                  int *size);
 
 /**
  * Function name: exitCodeReturn
@@ -104,7 +128,7 @@ int exitCodeReturn(char **command);
  * The output: none
  * The function operation: The function prints all the jobs in the linked list.
  */
-void jobs(struct Jobs *Jobs);
+struct Jobs *jobs(struct Jobs *Jobs, int*size);
 
 /**
  * Function name: main
@@ -113,6 +137,15 @@ void jobs(struct Jobs *Jobs);
  * The function operation: The main functions runs the run() function.
  * @return
  */
+
+/**
+ * Function name: manCommand
+ * The input: none
+ * The output: none
+ * The function operation: The function displays the operation
+ */
+void manCommand();
+
 int main() {
     return run();
 }
@@ -121,52 +154,96 @@ int run() {
     struct Jobs *Jobs = (struct Jobs *) malloc(sizeof(struct Jobs));
     char *command[SIZE];
     int status;
+    int size = 0;
     pid_t pid;
+    printf("%s", PROMPT);
     char *input = userInput();
+    // while user didn't enter exit
     while (strcmp(input, EXIT) != 0) {
         if (strcmp(input, JOBS) == 0) {
-            jobs(Jobs);
+            Jobs = jobs(Jobs,&size);
+        } else if (strcmp(input, MAN) == 0) {
+            manCommand();
         } else {
+            // splitting the tokens to the command array
             identifyCommand(input, command);
-            int check = checkIsJob(command);
-            if ((pid = fork()) < 0) {
-                printf("%s\n", ERROR_FORK);
-            } else if (pid == 0) {// אני נמצא בבן
-                if (execvp(command[ZERO], command) < 0) {
-                    printf("%s\n", ERROR_EXCEVP);
-                }
+            if (strcmp(command[ZERO], CD) == 0) {
+                cdCommand(command);
             } else {
+                int check = checkIsJob(command);
                 if (check > 0) {
-                    insertToJobs(command, Jobs, check, pid);
+                    // free(command[check-1]);
+                    free(command[check - 1]);
+                    command[check-1] = NULL;
                 }
-                printf("%d\n", getpid());
-                if (!check) {
-                    wait(&status);
+                if ((pid = fork()) < 0) {
+                    fprintf(stderr, FAILURE);
+                }
+                if (check > 0) {
+                    insertToJobs(command, Jobs, check, pid, &size);
+                }
+                // if it's a job
+                // if we are in the father
+                if (pid > 0) {
+                    printf("%d\n", pid);
+                    if (check == 0) {
+                        wait(&status);
+                    }
+                    // we are in the child
+                } else if (pid == 0) {
+                    if (execvp(command[ZERO], command) < 0) {
+                        fprintf(stderr, FAILURE);
+                    }
+                    exit(0);
                 }
 
             }
         }
+        printf("%s", PROMPT);
+        free(input);
+        freeCommand(command);
         input = userInput();
     }
+    identifyCommand(input, command);
+    int statusCode = exitCommand(command, Jobs);
+    freeCommand(command);
+    free(input);;
+    return statusCode;
 
-    exitCommand(command, Jobs, input);
+}
+
+void freeCommand(char *command[SIZE]) {
+    int i = 0;
+    while (command[i] != NULL) {
+        free(command[i]);
+        command[i] = NULL;
+        i++;
+    }
+}
+
+void manCommand() {
+    printf("help:\n"
+           "jobs: show jobs which are currently running in the background.\n"
+           "cd: move to another directory.\n"
+           "exit: quit from program.\n");
+
 }
 
 void cdCommand(char **command) {
     printf("%d\n", getpid());
-    if (command[ZERO] == NULL || (strcmp(command[1], WRONG_ARG)) == 0) {
+    if (command[1] == NULL || (!strcmp(command[1], WRONG_ARG))) {
         chdir(getenv(PATH));
     } else {
-        chdir(command[ZERO]);
+        if (chdir(command[1]) < 0) {
+            fprintf(stderr, FAILURE);
+        };
     }
 }
 
-int exitCommand(char **command, struct Jobs *Jobs, char *toEmpty) {
-    free(toEmpty);
+int exitCommand(char *command[SIZE], struct Jobs *Jobs) {
     printf("%d\n", getpid());
     struct Jobs *pointer = Jobs;
     struct Jobs *nextPtr;
-
     while (pointer != NULL) {
         kill(pointer->pid, SIGKILL);
         nextPtr = pointer->nextJob;
@@ -174,18 +251,15 @@ int exitCommand(char **command, struct Jobs *Jobs, char *toEmpty) {
         free(pointer);
         pointer = nextPtr;
     }
-
-    exitCodeReturn(command);
-
+    return exitCodeReturn(command);
 }
 
 char *userInput() {
-    char buffer[SIZE];
+    char buffer[SIZE] = "";
     int length = 0;
-    if (fgets(buffer, SIZE, stdin) != NULL) {
-        length = strlen(buffer);
-    }
-    char *array = (char *) malloc(sizeof(char) * length);
+    fgets(buffer, SIZE, stdin);
+    length = strlen(buffer);
+    char *array = (char *) malloc(sizeof(char) * length + 1);
     strcpy(array, buffer);
     array[length - 1] = '\0';
     return array;
@@ -195,12 +269,12 @@ void identifyCommand(char *command, char *array[SIZE]) {
     char *tokens = strtok(command, " ");
     int i = 0;
     while (tokens != NULL) {
-        printf("%s", tokens);
-        array[i] = (char *) malloc(sizeof(char) * strlen(tokens));
+        array[i] = (char *) malloc(sizeof(char) * strlen(tokens) + 1);
         strcpy(array[i], tokens);
         i++;
         tokens = strtok(NULL, " ");
     }
+    free(tokens);
 }
 
 int checkIsJob(char *array[SIZE]) {
@@ -209,7 +283,7 @@ int checkIsJob(char *array[SIZE]) {
     char *pointer = array[index];
     while (pointer != NULL) {
         index++;
-        if ((strcmp(pointer, "&\n")) == 0) {
+        if ((strcmp(pointer, AMP)) == 0) {
             indicator = 1;
             break;
         } else {
@@ -223,45 +297,102 @@ int checkIsJob(char *array[SIZE]) {
     }
 }
 
-void insertToJobs(char *job[SIZE], struct Jobs *head, int indexOfAmp, int pid) {
+void
+insertToJobs(char *command[SIZE], struct Jobs *head, int indexOfAmp, int pid,
+             int *size) {
     int i = 0;
     int numOfBytes = 0;
+    // we are counting how much allocation needed
     while (i < indexOfAmp - 1) {
-        numOfBytes += strlen(job[i]);
+        numOfBytes += strlen(command[i]);
         i++;
     }
-    char *tempString = (char *) malloc(sizeof(char) * numOfBytes);
+    char *tempString = (char *) malloc(sizeof(char) * numOfBytes + 2);
     i = 0;
     while (i < indexOfAmp - 1) {
-        strcat(tempString, job[i]);
-        strcat(tempString, " ");
+        strcat(tempString, command[i]);
+        if (command[i+1] != NULL) {
+            //if (command[i + 1] != NULL) {
+            strcat(tempString, " ");
+        }
         i++;
     }
-    if (head->input == NULL) {
-        head->input = (char *) malloc(sizeof(char) * numOfBytes);
+    // if there is no job at all, it's the first
+    if (*size == 0) {
+        head->input = (char *) malloc(strlen(tempString) + 1);
         strcpy(head->input, tempString);
         head->pid = pid;
+        // there is at least one job, we we look for the last job and enter
     } else {
         struct Jobs *pointer = head;
         while (pointer->nextJob != NULL) {
-            pointer++;
+            pointer = pointer->nextJob;
         }
         pointer->nextJob = (struct Jobs *) malloc(sizeof(struct Jobs));
-        pointer->nextJob->input = (char *) malloc(sizeof(char) * numOfBytes);
+       // pointer->nextJob->input = (char *) malloc(
+         //       sizeof(char) * numOfBytes + 1);
+        pointer->nextJob->input = (char *) malloc(
+                strlen(tempString)+1);
         strcpy(pointer->nextJob->input, tempString);
         pointer->nextJob->pid = pid;
     }
+    free(tempString);
+    (*size)++;
 }
 
-void jobs(struct Jobs *Jobs) {
+struct Jobs *jobs(struct Jobs *Jobs, int *size) {
     struct Jobs *pointer = Jobs;
-    if (pointer->input == NULL) {
-        return;
+    struct Jobs *prevPointer;
+    if (*size == 0){
+        return Jobs;
     }
+    struct Jobs *nextPointer;
+    pid_t pid;
+    int status;
     while (pointer != NULL) {
-        printf("%d %s %s", pointer->pid, pointer->input, " ");
+        pid = waitpid(pointer->pid, &status, WNOHANG);
+        if (pid == pointer->pid) {
+            prevPointer = prev(Jobs, pointer);
+            // in this situation, its the first, we just delete and move on
+            if (prevPointer == NULL) {
+                nextPointer = pointer->nextJob;
+                free(pointer->input);
+                free(pointer);
+                Jobs = nextPointer;
+                pointer = nextPointer;
+                (*size)--;
+                //we need to delete node in the middle
+            } else {
+                nextPointer = pointer->nextJob;
+                free(pointer->input);
+                free(pointer);
+                prevPointer->nextJob = nextPointer;
+                pointer = nextPointer;
+                (*size)--;
+            }
+
+        } else {
+            pointer = pointer->nextJob;
+        }
+    }
+    pointer = Jobs;
+    while (pointer != NULL) {
+        printf("%d %s\n", pointer->pid, pointer->input);
         pointer = pointer->nextJob;
     }
+    return Jobs;
+}
+
+struct Jobs *prev(struct Jobs *Jobs, struct Jobs *dest) {
+    struct Jobs *copyPointer = Jobs;
+    while (copyPointer != NULL) {
+        if (copyPointer->nextJob == dest) {
+            return copyPointer;
+        } else {
+            copyPointer = copyPointer->nextJob;
+        }
+    }
+    return NULL;
 }
 
 int exitCodeReturn(char **command) {
